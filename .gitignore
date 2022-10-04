@@ -2,3 +2,4 @@ target/
 .idea/
 kafka1/
 data/
+kafka-consumers-opensearch/data/kafka1/data/

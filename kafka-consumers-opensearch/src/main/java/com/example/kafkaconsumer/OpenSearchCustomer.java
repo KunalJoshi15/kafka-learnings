@@ -1,5 +1,6 @@
 package com.example.kafkaconsumer;
 
+import com.google.gson.JsonParser;
 import org.apache.http.HttpHost;
 import org.apache.http.auth.AuthScope;
 import org.apache.http.auth.UsernamePasswordCredentials;
@@ -70,10 +71,13 @@ public class OpenSearchCustomer {
         properties.setProperty(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG,StringDeserializer.class.getName());
         properties.setProperty(ConsumerConfig.GROUP_ID_CONFIG,groupId);
         properties.setProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG,"latest");
-
+//        properties.setProperty(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG,"false"); automatically read from the consumer.
+// reprocessing the same data will happen in this case.
         // create kafka consumer;
         return new KafkaConsumer<String,String>(properties);
     }
+    // Define an id using kafka record coordinates.
+
     public static void main(String[] args) throws IOException {
         Logger log = LoggerFactory.getLogger(OpenSearchCustomer.class.getSimpleName());
         // first create an OpenSearchClient
@@ -100,17 +104,32 @@ public class OpenSearchCustomer {
                 log.info("Received "+recordCount+" record(s)");
 
                 for(ConsumerRecord<String,String> record:records){
+//                    String is = record.topic()+"_"+record.partition()+"_"+record.offset();
+                    String id = extractId(record.value());
+                    // open source updates the information which is already present with respect to the specified id.
                     IndexRequest indexRequest = new IndexRequest("wikimedia")
-                            .source(record.value(), XContentType.JSON);
+                            .source(record.value(), XContentType.JSON).id(id);
 
                     openSearchClient.index(indexRequest,RequestOptions.DEFAULT);
                     log.info("Inserted 1 document into Opensearch");
 
                 }
+                // commit offset after the batch is consumed.
+                consumer.commitAsync();
+                log.info("Offsets have been committed");
             }
         }
 
         // main code
+    }
+
+    private static String extractId(String value) {
+        return JsonParser.parseString(value)
+                .getAsJsonObject()
+                .get("meta")
+                .getAsJsonObject()
+                .get("id")
+                .getAsString();
     }
 }
 /*
